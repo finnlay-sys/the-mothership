@@ -1,0 +1,1451 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: MOTHERSHIP Multi-Agent Governance API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: missions
+    description: Mission management
+  - name: audit
+    description: Audit trail and reasoning packets
+  - name: queen
+    description: Queen node control and thesis locks
+  - name: market
+    description: Hyperliquid market data (read-only)
+  - name: execution
+    description: Hyperliquid live & paper execution (Task #36)
+  - name: ledger
+    description: Tamper-evident SHA-256 chained trade ledger (Task #37)
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /missions:
+    get:
+      operationId: listMissions
+      tags: [missions]
+      summary: List all missions
+      responses:
+        "200":
+          description: List of missions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Mission"
+    post:
+      operationId: createMission
+      tags: [missions]
+      summary: Create a new mission with a Prime Objective
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMissionBody"
+      responses:
+        "201":
+          description: Mission created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Mission"
+
+  /missions/{id}:
+    get:
+      operationId: getMission
+      tags: [missions]
+      summary: Get a mission by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Mission details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Mission"
+
+  /missions/{id}/run:
+    post:
+      operationId: runMission
+      tags: [missions]
+      summary: Trigger agent cycle for a mission (SSE stream)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: |-
+            Server-Sent Events stream of agent events. Each `data:` payload
+            is a JSON object matching `MissionRunStreamEvent`. The `type`
+            discriminator covers Worker/Observer/Queen reasoning packets,
+            cycle lifecycle, and the `chart_annotation` payload consumed by
+            the mission-detail chart for live marker / price-line drawing.
+          content:
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/MissionRunStreamEvent"
+
+  /missions/{id}/status:
+    get:
+      operationId: getMissionStatus
+      tags: [missions]
+      summary: Get current mission status and cycle count
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Mission status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MissionStatus"
+
+  /missions/{id}/reasoning-packets:
+    get:
+      operationId: getMissionReasoningPackets
+      tags: [audit]
+      summary: Get all reasoning packets for a mission
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of reasoning packets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReasoningPacket"
+
+  /missions/{id}/vetoes:
+    get:
+      operationId: getMissionVetoes
+      tags: [audit]
+      summary: Get all vetoes for a mission
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of vetoes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Veto"
+
+  /missions/{id}/kill:
+    post:
+      operationId: killMission
+      tags: [missions]
+      summary: Abort a running mission (kill switch)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Mission aborted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueenDecision"
+
+  /missions/{id}/queen/approve:
+    post:
+      operationId: queenApprove
+      tags: [queen]
+      summary: Queen approves a thesis lock
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QueenDecisionBody"
+      responses:
+        "200":
+          description: Approval recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueenDecision"
+
+  /missions/{id}/queen/intervene:
+    post:
+      operationId: queenIntervene
+      tags: [queen]
+      summary: Queen issues guidance to unstick deadlocked workers
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QueenInterveneBody"
+      responses:
+        "200":
+          description: Intervention recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueenDecision"
+
+  /missions/{id}/queen/veto:
+    post:
+      operationId: queenVeto
+      tags: [queen]
+      summary: Queen vetoes a proposal
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QueenDecisionBody"
+      responses:
+        "200":
+          description: Veto recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueenDecision"
+
+  /audit/recent:
+    get:
+      operationId: getRecentAuditEntries
+      tags: [audit]
+      summary: Get recent audit entries across all missions
+      responses:
+        "200":
+          description: Recent audit entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditSummary"
+
+  /audit/stats:
+    get:
+      operationId: getAuditStats
+      tags: [audit]
+      summary: System-wide audit statistics
+      responses:
+        "200":
+          description: Audit statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditStats"
+
+  /market/symbols:
+    get:
+      operationId: listMarketSymbols
+      tags: [market]
+      summary: List all tradeable Hyperliquid perp symbols
+      responses:
+        "200":
+          description: Symbol universe
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  symbols:
+                    type: array
+                    items:
+                      type: string
+                required: [symbols]
+
+  /market/{symbol}:
+    get:
+      operationId: getMarketSnapshot
+      tags: [market]
+      summary: Get a one-shot market snapshot for a perp symbol
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Market snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketSnapshot"
+        "400":
+          description: Invalid symbol format or unknown perp symbol
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        "502":
+          description: Upstream Hyperliquid Info API unavailable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /market/{symbol}/candles:
+    get:
+      operationId: getMarketCandles
+      tags: [market]
+      summary: Get historical OHLCV candles for a perp symbol
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: interval
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [1m, 5m, 15m, 1h, 4h, 1d]
+            default: 1m
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 500
+      responses:
+        "200":
+          description: Candle batch
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CandleBatch"
+        "400":
+          description: Invalid symbol, interval, or limit
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        "502":
+          description: Upstream Hyperliquid Info API unavailable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /market/{symbol}/stream:
+    get:
+      operationId: streamMarketSnapshot
+      tags: [market]
+      summary: Live SSE stream of market snapshots (~2s cadence)
+      description: |
+        Server-Sent Events stream. Consume from the browser with `EventSource`,
+        not via the generated React Query hook (which models this as a single
+        fetch and will not deliver subsequent ticks). Each `message` event
+        carries a JSON `MarketSnapshot`. Upstream failures are emitted as
+        `event: upstream_error` with `{ message: string }`.
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: SSE stream of MarketSnapshot payloads
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "400":
+          description: Invalid symbol format or unknown perp symbol
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        "502":
+          description: Upstream Hyperliquid Info API unavailable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /rules:
+    get:
+      operationId: listRules
+      tags: [queen]
+      summary: List all governance rules
+      responses:
+        "200":
+          description: Rules list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GovernanceRule"
+    post:
+      operationId: createRule
+      tags: [queen]
+      summary: Create a new governance rule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRuleBody"
+      responses:
+        "201":
+          description: Rule created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GovernanceRule"
+
+  /execution/config:
+    get:
+      operationId: getExecutionConfig
+      tags: [execution]
+      summary: Get the (redacted) global execution config — wallet address, paper-mode flag, risk caps. Never returns the private key.
+      responses:
+        "200":
+          description: Current execution config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionConfig"
+    put:
+      operationId: updateExecutionConfig
+      tags: [execution]
+      summary: Update execution config. Send `privateKey` as plaintext only over the local devloop — it is encrypted at rest with AES-256-GCM (key derived from SESSION_SECRET via HKDF) and never echoed back. Send empty string to clear.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateExecutionConfigBody"
+      responses:
+        "200":
+          description: Updated config (redacted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionConfig"
+
+  /missions/{id}/execute:
+    post:
+      operationId: executeMission
+      tags: [execution]
+      summary: Submit the Queen's FINAL_VERDICT trade plan to Hyperliquid (or paper-simulate it). Places market entry + reduce-only stop + 50/50 reduce-only TP1/TP2 in a single grouped order.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "201":
+          description: Execution submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionPlacementResult"
+        "400":
+          description: Validation / risk-cap failure
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+        "409":
+          description: Mission is already executing or completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+
+  /missions/{id}/execute/kill:
+    post:
+      operationId: killMissionExecution
+      tags: [execution]
+      summary: KILL switch — cancel all resting orders for the mission and flat-close any open position (real or paper).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Kill executed (may be a no-op if nothing is open)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionKillResult"
+
+  /ledger:
+    get:
+      operationId: listLedgerEntries
+      tags: [ledger]
+      summary: List ledger entries (filterable by mission, action, time range). Read-only — the ledger is append-only.
+      parameters:
+        - name: missionId
+          in: query
+          required: false
+          schema: { type: integer }
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [submit, fill, cancel, kill, close, error]
+        - name: after
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+        - name: before
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 5000 }
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: Filtered ledger page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LedgerPage"
+
+  /ledger/verify:
+    get:
+      operationId: verifyLedger
+      tags: [ledger]
+      summary: Recompute every hash in the chain. Returns the first index where the chain breaks, if any.
+      responses:
+        "200":
+          description: Verify result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LedgerVerifyResult"
+
+  /ledger/missions/{id}:
+    get:
+      operationId: getMissionLedger
+      tags: [ledger]
+      summary: List ledger entries for a single mission.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Mission ledger page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LedgerPage"
+
+  /ledger/missions/{id}/verify:
+    get:
+      operationId: verifyMissionLedger
+      tags: [ledger]
+      summary: Verify the full chain and report how many entries belong to this mission.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Verify result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LedgerVerifyResult"
+
+  /ledger/export:
+    get:
+      operationId: exportLedger
+      tags: [ledger]
+      summary: Download the entire chain as newline-delimited JSON for off-machine archiving.
+      responses:
+        "200":
+          description: NDJSON ledger file
+          content:
+            application/x-ndjson:
+              schema: { type: string }
+
+  /missions/{id}/execution:
+    get:
+      operationId: getMissionExecution
+      tags: [execution]
+      summary: Get the current execution state for a mission — every order leg plus the open (or last) position with refreshed unrealized PnL.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Execution snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MissionExecutionSnapshot"
+
+components:
+  schemas:
+    LedgerEntry:
+      type: object
+      description: One link in the SHA-256 hash chain. `hash = SHA-256(prevHash + canonicalJSON(body))` where body is every field except `prevHash` and `hash`.
+      properties:
+        index: { type: integer, description: 0-based position in the chain }
+        ts: { type: string, format: date-time }
+        missionId: { type: integer, nullable: true }
+        action:
+          type: string
+          enum: [submit, fill, cancel, kill, close, error]
+        source: { type: string, description: e.g. "executor", "executor.paper", "kill" }
+        missionObjective: { type: string, nullable: true }
+        verdictRef:
+          type: object
+          nullable: true
+          properties:
+            stance: { type: string }
+            symbol: { type: string, nullable: true }
+            bias: { type: string, nullable: true }
+            cycle: { type: integer, nullable: true }
+            packetId:
+              type: integer
+              nullable: true
+              description: Reasoning-packet row ID of the Queen FINAL_VERDICT that authorised this execution.
+          required: [stance]
+        tradePlan:
+          nullable: true
+          description: Snapshot of the Queen FINAL_VERDICT trade plan at the moment this entry was written.
+        payload:
+          description: Action-specific payload (request/response, fills, errors). Secrets are scrubbed before write.
+        prevHash: { type: string }
+        hash: { type: string }
+      required: [index, ts, missionId, action, source, missionObjective, verdictRef, tradePlan, payload, prevHash, hash]
+
+    LedgerPage:
+      type: object
+      properties:
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/LedgerEntry" }
+        total: { type: integer }
+      required: [entries, total]
+
+    LedgerVerifyResult:
+      type: object
+      properties:
+        ok: { type: boolean }
+        totalEntries: { type: integer }
+        lastHash: { type: string }
+        brokeAtIndex: { type: integer, nullable: true }
+        brokeAtReason: { type: string, nullable: true }
+        missionEntries: { type: integer, nullable: true }
+        missionFirstIndex: { type: integer, nullable: true }
+        missionLastIndex: { type: integer, nullable: true }
+        missionLastHash: { type: string, nullable: true }
+      required: [ok, totalEntries, lastHash, brokeAtIndex, brokeAtReason]
+
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    Mission:
+      type: object
+      properties:
+        id:
+          type: integer
+        primeObjective:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, awaiting_queen, awaiting_intervention, locked, executing, completed, vetoed, aborted]
+        cycleCount:
+          type: integer
+        currentPhase:
+          type: string
+          nullable: true
+        thesisLock:
+          type: string
+          nullable: true
+        targetSymbol:
+          type: string
+          nullable: true
+          description: Hyperliquid perp symbol this mission is anchored to (uppercase). When set, agents receive a live market-context block and the chart panel renders.
+        speedMode:
+          type: string
+          enum: [scalp, swing]
+          description: Debate cadence. `scalp` caps at 2 cycles with minimal reasoning effort (~20s); `swing` uses the legacy 4-cycle pace with full reasoning (~3min).
+        costUsd:
+          type: number
+          description: Cumulative LLM spend on this mission in USD, summed across every Strategist/Adversary/Synthesizer/Observer/Queen/Executor call. gpt-5-mini priced at $0.25/M input + $2/M output (reasoning tokens billed as output).
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - primeObjective
+        - status
+        - cycleCount
+        - costUsd
+        - createdAt
+        - updatedAt
+
+    CreateMissionBody:
+      type: object
+      properties:
+        primeObjective:
+          type: string
+          minLength: 10
+        targetSymbol:
+          type: string
+          nullable: true
+          description: Optional Hyperliquid perp symbol (uppercase). Validated against the live perp universe.
+        speedMode:
+          type: string
+          enum: [scalp, swing]
+          description: Debate cadence. "scalp" (default) caps the run at 2 cycles with reasoning_effort=minimal so a confident thesis lands in ~20s, suitable for 1m–5m perp trading. "swing" preserves the slower 4-cycle thoroughness with no reasoning cap.
+      required:
+        - primeObjective
+
+    MissionStatus:
+      type: object
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+        cycleCount:
+          type: integer
+        currentPhase:
+          type: string
+          nullable: true
+        lastPacketAt:
+          type: string
+          nullable: true
+          format: date-time
+      required:
+        - id
+        - status
+        - cycleCount
+
+    ReasoningPacket:
+      type: object
+      properties:
+        id:
+          type: integer
+        missionId:
+          type: integer
+        cycle:
+          type: integer
+        agentRole:
+          type: string
+          enum: [worker, observer, queen, executor]
+        reasoning:
+          type: string
+        proposal:
+          type: string
+          nullable: true
+        verdict:
+          type: string
+          nullable: true
+        alignmentScore:
+          type: number
+          nullable: true
+        annotations:
+          nullable: true
+          description: Chart annotations emitted by Synthesizer or Queen agents (markers + price lines for the candlestick chart).
+          $ref: "#/components/schemas/ChartAnnotations"
+        tokensIn:
+          type: integer
+          nullable: true
+          description: Prompt tokens consumed by the LLM call that produced this packet.
+        tokensOut:
+          type: integer
+          nullable: true
+          description: Completion tokens emitted by the LLM call (includes invisible reasoning tokens).
+        reasoningTokens:
+          type: integer
+          nullable: true
+          description: Subset of tokensOut spent on hidden reasoning (gpt-5-mini extended-thinking).
+        costUsd:
+          type: number
+          nullable: true
+          description: USD cost of the LLM call that produced this packet, computed from tokensIn/tokensOut at gpt-5-mini rates.
+        durationMs:
+          type: integer
+          nullable: true
+          description: Wall-clock duration in milliseconds for the LLM call that produced this packet. Used to surface per-agent latency in the Reasoning Feed.
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - missionId
+        - cycle
+        - agentRole
+        - reasoning
+        - createdAt
+
+    MissionRunStreamEvent:
+      type: object
+      description: |-
+        Discriminated union of events streamed from POST /missions/{id}/run.
+        Each SSE `data:` line is a JSON object of this shape. The `type`
+        field determines which fields are populated under `data`.
+      required: [type, data]
+      properties:
+        type:
+          type: string
+          enum:
+            - worker_proposal
+            - observer_audit
+            - queen_checkpoint
+            - queen_guidance
+            - cycle_complete
+            - chart_annotation
+            - cost_tick
+            - deadlock
+            - done
+            - error
+        data:
+          oneOf:
+            - $ref: "#/components/schemas/ChartAnnotationEventData"
+            - type: object
+              additionalProperties: true
+              description: Generic event payload (worker/observer/queen/lifecycle).
+
+    ChartAnnotationEventData:
+      type: object
+      description: Payload for `chart_annotation` events. Carries one cycle's worth of markers + price lines, sourced from Synthesizer or Queen.
+      required: [packetId, missionId, cycle, source, annotations]
+      properties:
+        packetId:
+          type: integer
+        missionId:
+          type: integer
+        cycle:
+          type: integer
+        source:
+          type: string
+          enum: [synthesizer, queen]
+        annotations:
+          $ref: "#/components/schemas/ChartAnnotations"
+
+    ChartAnnotations:
+      type: object
+      properties:
+        markers:
+          type: array
+          items:
+            type: object
+            properties:
+              kind:
+                type: string
+                enum: [entry, exit, stop, take_profit, signal, note]
+              timeUtcSec:
+                type: integer
+              position:
+                type: string
+                enum: [aboveBar, belowBar, inBar]
+              shape:
+                type: string
+                enum: [arrowUp, arrowDown, circle, square]
+              color:
+                type: string
+                enum: [cyan, red, amber, muted]
+              text:
+                type: string
+            required: [kind, timeUtcSec, position, shape, color, text]
+        priceLines:
+          type: array
+          items:
+            type: object
+            properties:
+              kind:
+                type: string
+                enum: [entry, stop, take_profit, level]
+              price:
+                type: number
+              color:
+                type: string
+                enum: [cyan, red, amber, muted]
+              label:
+                type: string
+            required: [kind, price, color, label]
+      required: [markers, priceLines]
+
+    Veto:
+      type: object
+      properties:
+        id:
+          type: integer
+        missionId:
+          type: integer
+        cycle:
+          type: integer
+        vetoedBy:
+          type: string
+          enum: [observer, queen]
+        reason:
+          type: string
+        proposalSummary:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - missionId
+        - cycle
+        - vetoedBy
+        - reason
+        - proposalSummary
+        - createdAt
+
+    QueenDecisionBody:
+      type: object
+      properties:
+        reason:
+          type: string
+        thesisLock:
+          type: string
+          nullable: true
+      required:
+        - reason
+
+    QueenInterveneBody:
+      type: object
+      properties:
+        guidance:
+          type: string
+          minLength: 5
+      required:
+        - guidance
+
+    QueenDecision:
+      type: object
+      properties:
+        missionId:
+          type: integer
+        decision:
+          type: string
+          enum: [approved, vetoed, aborted]
+        reason:
+          type: string
+        recordedAt:
+          type: string
+          format: date-time
+        autoExecuteScheduled:
+          type: boolean
+          description: True when the server fired executeMission() in the background after this approval (paper-mode only). Real mode requires a manual EXECUTE TRADE NOW click.
+        executionMode:
+          type: string
+          enum: [paper, real]
+          nullable: true
+          description: The execution mode at the moment of approval. Null when the mission has no placeable structured trade plan.
+      required:
+        - missionId
+        - decision
+        - reason
+        - recordedAt
+
+    Candle:
+      type: object
+      properties:
+        time:
+          type: integer
+          description: UTC seconds (open time)
+        open:
+          type: number
+        high:
+          type: number
+        low:
+          type: number
+        close:
+          type: number
+        volume:
+          type: number
+      required: [time, open, high, low, close, volume]
+
+    CandleBatch:
+      type: object
+      properties:
+        symbol:
+          type: string
+        interval:
+          type: string
+        candles:
+          type: array
+          items:
+            $ref: "#/components/schemas/Candle"
+      required: [symbol, interval, candles]
+
+    MarketSnapshot:
+      type: object
+      properties:
+        symbol:
+          type: string
+        markPrice:
+          type: number
+        oraclePrice:
+          type: number
+        midPrice:
+          type: number
+          nullable: true
+        bid:
+          type: number
+          nullable: true
+        ask:
+          type: number
+          nullable: true
+        bidSize:
+          type: number
+          nullable: true
+        askSize:
+          type: number
+          nullable: true
+        spread:
+          type: number
+          nullable: true
+        spreadBps:
+          type: number
+          nullable: true
+        fundingRate:
+          type: number
+        openInterest:
+          type: number
+        prevDayPrice:
+          type: number
+        dayVolumeUsd:
+          type: number
+        changePct24h:
+          type: number
+        timestamp:
+          type: number
+          description: Unix epoch milliseconds
+      required:
+        - symbol
+        - markPrice
+        - oraclePrice
+        - fundingRate
+        - openInterest
+        - prevDayPrice
+        - dayVolumeUsd
+        - changePct24h
+        - timestamp
+
+    AuditSummary:
+      type: object
+      properties:
+        recentPackets:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReasoningPacket"
+        recentVetoes:
+          type: array
+          items:
+            $ref: "#/components/schemas/Veto"
+      required:
+        - recentPackets
+        - recentVetoes
+
+    AuditStats:
+      type: object
+      properties:
+        totalMissions:
+          type: integer
+        activeMissions:
+          type: integer
+        totalPackets:
+          type: integer
+        totalVetoes:
+          type: integer
+        avgAlignmentScore:
+          type: number
+          nullable: true
+        vetoRate:
+          type: number
+          nullable: true
+      required:
+        - totalMissions
+        - activeMissions
+        - totalPackets
+        - totalVetoes
+
+    GovernanceRule:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+        active:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - description
+        - severity
+        - active
+        - createdAt
+
+    CreateRuleBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+      required:
+        - name
+        - description
+        - severity
+
+    ExecutionConfig:
+      type: object
+      description: Operator-facing view of the execution config. The private key is never returned — `hasPrivateKey` only indicates whether one is stored.
+      properties:
+        walletAddress:
+          type: string
+          nullable: true
+          description: Hyperliquid wallet address (0x…40 hex chars). Public — safe to display.
+        hasPrivateKey:
+          type: boolean
+          description: True if an encrypted private key is stored. Real-mode execution is only allowed when this is true.
+        useTestnet:
+          type: boolean
+          description: When true, all signed orders go to api.hyperliquid-testnet.xyz instead of mainnet.
+        paperMode:
+          type: boolean
+          description: When true, no signed orders are sent — fills are simulated against the live mark and persisted to the same execution_orders / execution_positions tables with paper=true.
+        notionalPerTradeUsd:
+          type: number
+          description: USD notional placed at entry. Size = notional / entry_price, rounded to the perp's szDecimals.
+        maxNotionalUsd:
+          type: number
+          description: Hard cap. notionalPerTradeUsd may not exceed this.
+        maxConcurrentTrades:
+          type: integer
+          description: Max number of OPEN positions across all missions. Execution refuses to place a new entry when this cap is hit.
+        defaultLeverage:
+          type: integer
+          description: Cross-margin leverage to send with new orders. (Reserved — current implementation relies on account-level leverage.)
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - hasPrivateKey
+        - useTestnet
+        - paperMode
+        - notionalPerTradeUsd
+        - maxNotionalUsd
+        - maxConcurrentTrades
+        - defaultLeverage
+        - updatedAt
+
+    UpdateExecutionConfigBody:
+      type: object
+      description: "All fields optional. Omit a field to leave it unchanged. Send privateKey as empty string to clear a stored key."
+      properties:
+        walletAddress:
+          type: string
+          nullable: true
+          pattern: "^0x[a-fA-F0-9]{40}$"
+        privateKey:
+          type: string
+          nullable: true
+          description: 32-byte hex (with or without 0x prefix). Encrypted at rest with AES-256-GCM. Empty string clears.
+        useTestnet:
+          type: boolean
+        paperMode:
+          type: boolean
+        notionalPerTradeUsd:
+          type: number
+        maxNotionalUsd:
+          type: number
+        maxConcurrentTrades:
+          type: integer
+        defaultLeverage:
+          type: integer
+
+    ExecutionOrder:
+      type: object
+      properties:
+        id: { type: integer }
+        missionId: { type: integer }
+        kind:
+          type: string
+          enum: [entry, stop, tp1, tp2]
+        side:
+          type: string
+          enum: [buy, sell]
+        reduceOnly: { type: boolean }
+        orderType:
+          type: string
+          enum: [market, limit, trigger]
+        triggerPx: { type: number, nullable: true }
+        limitPx: { type: number, nullable: true }
+        sz: { type: number }
+        hlOrderId:
+          type: string
+          nullable: true
+          description: Hyperliquid order id (oid) returned by the exchange. Null for paper rows and for legs that errored before placement.
+        status:
+          type: string
+          enum: [pending, open, filled, cancelled, rejected, error]
+        filledSz: { type: number }
+        avgFillPx: { type: number, nullable: true }
+        errorMessage: { type: string, nullable: true }
+        paper: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required:
+        - id
+        - missionId
+        - kind
+        - side
+        - reduceOnly
+        - orderType
+        - sz
+        - status
+        - filledSz
+        - paper
+        - createdAt
+        - updatedAt
+
+    ExecutionPosition:
+      type: object
+      properties:
+        id: { type: integer }
+        missionId: { type: integer }
+        symbol: { type: string }
+        side:
+          type: string
+          enum: [long, short]
+        sz: { type: number }
+        entryPx: { type: number }
+        unrealizedPnlUsd: { type: number }
+        realizedPnlUsd: { type: number }
+        status:
+          type: string
+          enum: [open, closed, killed]
+        paper: { type: boolean }
+        openedAt: { type: string, format: date-time }
+        closedAt: { type: string, format: date-time, nullable: true }
+        lastSyncedAt: { type: string, format: date-time }
+      required:
+        - id
+        - missionId
+        - symbol
+        - side
+        - sz
+        - entryPx
+        - unrealizedPnlUsd
+        - realizedPnlUsd
+        - status
+        - paper
+        - openedAt
+        - lastSyncedAt
+
+    ExecutionPlacedLeg:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [entry, stop, tp1, tp2]
+        side:
+          type: string
+          enum: [buy, sell]
+        reduceOnly: { type: boolean }
+        orderType:
+          type: string
+          enum: [market, trigger]
+        triggerPx: { type: number, nullable: true }
+        limitPx: { type: number, nullable: true }
+        sz: { type: number }
+        hlOrderId: { type: string, nullable: true }
+        status:
+          type: string
+          enum: [open, filled, rejected, error]
+        filledSz: { type: number }
+        avgFillPx: { type: number, nullable: true }
+        errorMessage: { type: string, nullable: true }
+      required:
+        - kind
+        - side
+        - reduceOnly
+        - orderType
+        - sz
+        - status
+        - filledSz
+
+    ExecutionPlacementResult:
+      type: object
+      properties:
+        paper:
+          type: boolean
+          description: True if executed in paper mode (no signed orders sent).
+        legs:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExecutionPlacedLeg"
+        position:
+          nullable: true
+          type: object
+          properties:
+            symbol: { type: string }
+            side:
+              type: string
+              enum: [long, short]
+            sz: { type: number }
+            entryPx: { type: number }
+          required: [symbol, side, sz, entryPx]
+      required:
+        - paper
+        - legs
+
+    ExecutionKillResult:
+      type: object
+      properties:
+        cancelled:
+          type: integer
+          description: Number of resting orders successfully cancelled (real-mode count from Hyperliquid; paper-mode = the row count).
+        closed:
+          type: boolean
+          description: True if an open position was flat-closed.
+        closedPx:
+          type: number
+          nullable: true
+          description: Mark price (paper) or actual fill price (real) at which the position was closed.
+        errors:
+          type: array
+          items: { type: string }
+      required:
+        - cancelled
+        - closed
+        - errors
+
+    MissionExecutionSnapshot:
+      type: object
+      properties:
+        orders:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExecutionOrder"
+        position:
+          nullable: true
+          $ref: "#/components/schemas/ExecutionPosition"
+      required:
+        - orders
